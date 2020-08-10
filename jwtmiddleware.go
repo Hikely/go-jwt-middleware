@@ -12,7 +12,7 @@ import (
 )
 
 // A function called whenever an error is encountered
-type errorHandler func(w http.ResponseWriter, r *http.Request, err string)
+type errorHandler func(w http.ResponseWriter, r *http.Request, err error)
 
 // TokenExtractor is a function that takes a request as input and returns
 // either a token or an error.  An error should only be returned if an attempt
@@ -32,7 +32,7 @@ type Options struct {
 	// Default value: "user"
 	UserProperty string
 	// The function that will be called when there's an error validating the token
-	// Default value:
+	// Default value: OnError
 	ErrorHandler errorHandler
 	// A boolean indicating if the credentials are required or not
 	// Default value: false
@@ -57,8 +57,8 @@ type JWTMiddleware struct {
 	Options Options
 }
 
-func OnError(w http.ResponseWriter, r *http.Request, err string) {
-	http.Error(w, err, http.StatusUnauthorized)
+func OnError(w http.ResponseWriter, r *http.Request, err error) {
+	http.Error(w, err.Error(), http.StatusUnauthorized)
 }
 
 // New constructs a new Secure instance with supplied options.
@@ -180,7 +180,7 @@ func (m *JWTMiddleware) CheckJWT(w http.ResponseWriter, r *http.Request) error {
 
 	// If an error occurs, call the error handler and return an error
 	if err != nil {
-		m.Options.ErrorHandler(w, r, err.Error())
+		m.Options.ErrorHandler(w, r, err)
 		return fmt.Errorf("Error extracting token: %w", err)
 	}
 
@@ -194,10 +194,10 @@ func (m *JWTMiddleware) CheckJWT(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		// If we get here, the required token is missing
-		errorMsg := "Required authorization token not found"
-		m.Options.ErrorHandler(w, r, errorMsg)
+		err := errors.New("required authorization token not found")
+		m.Options.ErrorHandler(w, r, err)
 		m.logf("  Error: No credentials found (CredentialsOptional=false)")
-		return fmt.Errorf(errorMsg)
+		return err
 	}
 
 	// Now parse the token
@@ -206,7 +206,7 @@ func (m *JWTMiddleware) CheckJWT(w http.ResponseWriter, r *http.Request) error {
 	// Check if there was an error in parsing...
 	if err != nil {
 		m.logf("Error parsing token: %v", err)
-		m.Options.ErrorHandler(w, r, err.Error())
+		m.Options.ErrorHandler(w, r, err)
 		return fmt.Errorf("Error parsing token: %w", err)
 	}
 
@@ -215,14 +215,14 @@ func (m *JWTMiddleware) CheckJWT(w http.ResponseWriter, r *http.Request) error {
 			m.Options.SigningMethod.Alg(),
 			parsedToken.Header["alg"])
 		m.logf("Error validating token algorithm: %s", message)
-		m.Options.ErrorHandler(w, r, errors.New(message).Error())
+		m.Options.ErrorHandler(w, r, errors.New(message))
 		return fmt.Errorf("Error validating token algorithm: %s", message)
 	}
 
 	// Check if the parsed token is valid...
 	if !parsedToken.Valid {
 		m.logf("Token is invalid")
-		m.Options.ErrorHandler(w, r, "The token isn't valid")
+		m.Options.ErrorHandler(w, r, errors.New("the token isn't valid"))
 		return errors.New("Token is invalid")
 	}
 
